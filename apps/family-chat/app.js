@@ -14,7 +14,7 @@
   }
 
   if (!cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
-    $('screen-loading').querySelector('p').textContent = !window.supabase
+    $('loading-msg').textContent = !window.supabase
       ? '필요한 파일을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.'
       : '설정이 아직 비어 있어요. config.js에 Supabase 주소와 공개 키를 넣어 주세요.';
     return;
@@ -45,16 +45,35 @@
   };
 
   // ---------- 시작 ----------
+  let failed = false;         // 인터넷 문제로 열지 못한 상태 (로그인은 그대로)
+
   async function start() {
+    // 브라우저가 저장 공간을 정리할 때 로그인 정보를 지우지 않도록 요청 (홈 화면에 추가하면 대부분 허락됨)
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 무시 */ }
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { show('login'); return; }
     await enter();
   }
 
   sb.auth.onAuthStateChange((event) => {
-    // 메일의 로그인 링크를 눌러 들어온 경우
     // (이 콜백 안에서 바로 서버를 부르면 멈출 수 있어 한 박자 뒤에 실행)
+    // 메일의 로그인 링크를 눌러 들어온 경우
     if (event === 'SIGNED_IN' && !me && !entering && !$('screen-loading').hidden) setTimeout(enter, 0);
+    // 서버가 로그인을 정말로 끝낸 경우(다른 곳에서 로그아웃, 연결 끊김 등)에만 로그인 화면으로
+    if (event === 'SIGNED_OUT' && me) setTimeout(() => resetToLogin('로그인이 끝났어요. 다시 로그인해 주세요.'), 0);
+  });
+
+  function showRetry(msg) {
+    failed = true;
+    show('loading');
+    $('loading-msg').textContent = msg;
+    $('retry-btn').hidden = false;
+  }
+  $('retry-btn').addEventListener('click', () => { $('retry-btn').hidden = true; $('loading-msg').textContent = '다시 여는 중…'; enter(); });
+  // 인터넷이 돌아오거나 화면으로 돌아오면 저절로 다시 시도
+  window.addEventListener('online', () => { if (failed && !entering) enter(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && failed && !entering) enter();
   });
 
   async function enter() {
@@ -62,9 +81,13 @@
     entering = true;
     try {
       show('loading');
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) { show('login'); return; }
+      $('retry-btn').hidden = true;
+      // 기기에 저장된 로그인 정보로 판단 (인터넷이 잠깐 끊겨도 로그아웃으로 보지 않음)
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { show('login'); return; }
+      const user = session.user;
       isAnon = !!user.is_anonymous;
+      const hasPassword = !!(user.user_metadata && user.user_metadata.has_password);
 
       const { data: m, error } = await sb.rpc('my_member');
       if (error) throw error;
@@ -80,6 +103,9 @@
       $('menu-me').textContent = '나: ' + (me.nickname || '') + (me.role === 'parent' ? ' (부모)' : '');
       $('logout-btn').textContent = isAnon ? '이 폰 연결 끊기' : '로그아웃';
       $('hello').textContent = (me.nickname || '') + '님, 무엇을 할까요?';
+      $('password-btn').hidden = isAnon;
+      $('password-btn').textContent = hasPassword ? '비밀번호 바꾸기' : '비밀번호 정하기';
+      $('pw-tip').hidden = isAnon || hasPassword;
       lastSeen = Number(store.get('fh-seen-' + me.id)) || 0;
       showAll = store.get('fh-all-' + me.id) === '1';
       setupTiles();
@@ -94,10 +120,11 @@
       }
       addMessages(first, 'initial');
       subscribe();
+      failed = false;
     } catch (e) {
       console.error(e);
-      show('login');
-      alert('가족방을 열지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.\n(' + (e.message || e) + ')');
+      // 로그인 정보는 지우지 않고, 다시 시도할 수 있게만 함
+      showRetry('지금 가족 홈에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.');
     } finally {
       entering = false;
     }
@@ -461,13 +488,18 @@
   $('nofamily-logout').addEventListener('click', signOut);
 
   async function signOut() {
-    if (channel) { sb.removeChannel(channel); channel = null; }
     await sb.auth.signOut();
-    me = null; msgs = []; ids = new Set(); members = new Map();
+    resetToLogin();
+  }
+
+  function resetToLogin(msg) {
+    if (channel) { sb.removeChannel(channel); channel = null; }
+    me = null; msgs = []; ids = new Set(); members = new Map(); failed = false;
     $('msg-list').replaceChildren();
     $('chat-badge').hidden = true;
     if (location.hash) history.replaceState(null, '', location.pathname);
     show('login');
+    if (msg) alert(msg);
   }
 
   // ---------- 로그인 화면 ----------
@@ -481,10 +513,35 @@
 
   let pendingEmail = '';
 
+  // 이메일 + 비밀번호 로그인 (홈 화면 아이콘 안에서도 바로 됨)
   $('form-email').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.currentTarget;
     $('email-error').textContent = '';
+    const email = $('email').value.trim();
+    const password = $('password').value;
+    if (!password) {
+      $('email-error').textContent = '비밀번호를 넣어 주세요. 아직 없다면 아래 "메일로 로그인 링크 받기"를 눌러 주세요.';
+      return;
+    }
+    busy(form, true);
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    busy(form, false);
+    if (error) {
+      $('email-error').textContent = /invalid|credentials/i.test(error.message)
+        ? '이메일이나 비밀번호가 맞지 않아요. 비밀번호를 정한 적이 없다면 아래 "메일로 로그인 링크 받기"를 눌러 주세요.'
+        : '로그인하지 못했어요: ' + error.message;
+      return;
+    }
+    $('password').value = '';
+    await enter();
+  });
+
+  // 메일로 로그인 링크 받기 (비밀번호가 없을 때)
+  $('magic-btn').addEventListener('click', async () => {
+    const form = $('form-email');
+    $('email-error').textContent = '';
+    if (!$('email').reportValidity()) return;
     const email = $('email').value.trim();
     busy(form, true);
     const { error } = await sb.auth.signInWithOtp({
@@ -501,10 +558,44 @@
       return;
     }
     pendingEmail = email;
-    $('otp-help').textContent = email + ' 로 보낸 메일의 숫자 코드를 넣어 주세요. 메일 속 링크를 눌러도 들어올 수 있어요.';
+    $('otp-help').textContent = email + ' 로 로그인 메일을 보냈어요.';
     $('form-email').hidden = true;
     $('form-otp').hidden = false;
-    $('otp').focus();
+  });
+
+  // ---------- 비밀번호 정하기 ----------
+  function openPassword() {
+    $('menu').hidden = true;
+    $('password-error').textContent = '';
+    show('password');
+    $('new-password').focus();
+  }
+  $('password-btn').addEventListener('click', openPassword);
+  $('pw-tip-btn').addEventListener('click', openPassword);
+  $('password-cancel').addEventListener('click', () => route());
+
+  $('form-password').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const pw = $('new-password').value;
+    $('password-error').textContent = '';
+    if (pw.length < 8) { $('password-error').textContent = '8자 이상으로 정해 주세요.'; return; }
+    if (pw !== $('new-password2').value) { $('password-error').textContent = '두 비밀번호가 달라요.'; return; }
+    busy(form, true);
+    const { error } = await sb.auth.updateUser({ password: pw, data: { has_password: true } });
+    busy(form, false);
+    if (error) {
+      $('password-error').textContent = /different/i.test(error.message) ? '지금 비밀번호와 같아요. 다른 걸로 정해 주세요.'
+        : /reauth/i.test(error.message) ? '보안을 위해 메일 링크로 다시 로그인한 뒤 바로 정해 주세요.'
+        : /weak|short|characters/i.test(error.message) ? '더 길거나 어려운 비밀번호로 정해 주세요.'
+        : '저장하지 못했어요: ' + error.message;
+      return;
+    }
+    $('new-password').value = ''; $('new-password2').value = '';
+    $('pw-tip').hidden = true;
+    $('password-btn').textContent = '비밀번호 바꾸기';
+    alert('비밀번호를 정했어요. 이제 홈 화면 아이콘에서 이메일 + 비밀번호로 로그인하세요.');
+    route();
   });
 
   $('otp-back').addEventListener('click', () => {
@@ -548,6 +639,9 @@
       busy(form, false);
     }
   });
+
+  // 카카오톡·네이버 같은 앱 안에서 열면 로그인이 따로 저장되어 자주 풀려 보임 → 안내
+  if (/KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(navigator.userAgent)) $('inapp-tip').hidden = false;
 
   start();
 })();
