@@ -1,4 +1,4 @@
-// 가족방 1단계: 로그인 + 텍스트 채팅 + 실시간 + 이전 메시지
+// 가족 홈: 메뉴(오늘저녁 · 초등학습 · 중등학습 · 가족채팅) + 가족채팅(실시간, 이전 메시지)
 // 서버 규칙(RLS)은 family-hub/supabase/schema.sql 에 있습니다.
 (() => {
   'use strict';
@@ -34,6 +34,14 @@
   let channel = null;
   let entering = false;
   let tmpSeq = 0;
+  let chatDirty = true;       // 채팅 화면이 숨어 있는 동안 바뀐 것이 있음
+  let lastSeen = 0;           // 이 기기에서 마지막으로 본 메시지 번호 (안 읽은 개수 계산용)
+  let showAll = false;        // 메뉴에서 "모든 메뉴 보기"를 눌렀는지
+
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* 저장 못 해도 동작 */ } },
+  };
 
   // ---------- 시작 ----------
   async function start() {
@@ -66,14 +74,23 @@
         sb.from('families').select('id,name').maybeSingle(),
         loadMembers(),
       ]);
-      $('family-name').textContent = fam ? fam.name : '가족방';
-      document.title = (fam ? fam.name + ' ' : '') + '가족방';
+      $('family-name').textContent = fam ? fam.name : '가족 홈';
+      document.title = (fam ? fam.name + ' ' : '') + '가족 홈';
       $('menu-me').textContent = '나: ' + (me.nickname || '') + (me.role === 'parent' ? ' (부모)' : '');
       $('logout-btn').textContent = isAnon ? '이 폰 연결 끊기' : '로그아웃';
+      $('hello').textContent = (me.nickname || '') + '님, 무엇을 할까요?';
+      lastSeen = Number(store.get('fh-seen-' + me.id)) || 0;
+      showAll = store.get('fh-all-' + me.id) === '1';
+      setupTiles();
 
-      show('chat');
-      msgs = []; ids = new Set(); noMoreOlder = false;
+      msgs = []; ids = new Set(); noMoreOlder = false; chatDirty = true;
+      route();
       const first = await fetchPage(null);
+      // 처음 쓰는 기기는 예전 메시지를 모두 "안 읽음"으로 세지 않음
+      if (store.get('fh-seen-' + me.id) === null) {
+        lastSeen = first.length ? first[first.length - 1].id : 0;
+        store.set('fh-seen-' + me.id, String(lastSeen));
+      }
       addMessages(first, 'initial');
       subscribe();
     } catch (e) {
@@ -193,6 +210,9 @@
   }
 
   function render(scroll) {
+    updateBadge();
+    if ($('screen-chat').hidden) { chatDirty = true; return; }   // 숨어 있을 땐 열 때 그림
+    chatDirty = false;
     const box = $('messages');
     const list = $('msg-list');
     const prevHeight = box.scrollHeight;
@@ -270,6 +290,7 @@
     if (scroll === 'bottom') box.scrollTop = box.scrollHeight;
     else if (scroll === 'keep') box.scrollTop = prevTop + (box.scrollHeight - prevHeight);
     else box.scrollTop = prevTop;
+    if (nearBottom()) markSeen();
 
     // 화면이 덜 찼으면 이전 것을 더 불러옴
     if (!noMoreOlder && box.scrollHeight <= box.clientHeight + 40) loadOlder();
@@ -281,7 +302,87 @@
 
   $('messages').addEventListener('scroll', () => {
     if ($('messages').scrollTop < 80) loadOlder();
+    if (nearBottom()) markSeen();
   }, { passive: true });
+
+  // ---------- 안 읽은 메시지 (이 기기 기준) ----------
+  function markSeen() {
+    const newest = [...msgs].reverse().find((m) => typeof m.id === 'number');
+    if (newest && newest.id > lastSeen) {
+      lastSeen = newest.id;
+      store.set('fh-seen-' + me.id, String(lastSeen));
+      updateBadge();
+    }
+  }
+
+  function updateBadge() {
+    if (!me) return;
+    const unread = msgs.filter((m) => typeof m.id === 'number' && m.id > lastSeen && m.from_member !== me.id);
+    const badge = $('chat-badge');
+    badge.hidden = !unread.length;
+    badge.textContent = unread.length >= PAGE ? PAGE + '+' : String(unread.length);
+    const last = [...msgs].reverse().find((m) => typeof m.id === 'number');
+    $('chat-preview').textContent = last
+      ? (last.from_member === me.id ? '나' : nameOf(last.from_member)) + ': ' + last.body.replace(/\s+/g, ' ')
+      : '우리 가족 대화방';
+  }
+
+  // ---------- 가족 홈 메뉴 ----------
+  // 부모는 모두, 아이는 학년에 맞는 학습 메뉴만 (초1~6 → 초등학습, 중1~3(7~9) → 중등학습)
+  function menuFor(m) {
+    if (showAll || m.role === 'parent' || !m.grade) return ['dinner', 'harunote', 'nuneul', 'chat'];
+    return ['dinner', m.grade <= 6 ? 'harunote' : 'nuneul', 'chat'];
+  }
+
+  function setupTiles() {
+    const urls = cfg.apps || {};
+    const visible = menuFor(me);
+    document.querySelectorAll('.tile').forEach((t) => {
+      const app = t.dataset.app;
+      t.hidden = !visible.includes(app);
+      if (app === 'chat') return;
+      const url = urls[app];
+      t.classList.toggle('soon', !url);
+      const desc = t.querySelector('.tile-desc');
+      desc.dataset.text = desc.dataset.text || desc.textContent;
+      desc.textContent = url ? desc.dataset.text : '준비 중';
+      if (url) { t.href = url; t.removeAttribute('aria-disabled'); }
+      else { t.href = '#'; t.setAttribute('aria-disabled', 'true'); }
+    });
+    $('show-all-btn').hidden = me.role === 'parent' || !me.grade;
+    $('show-all-btn').textContent = showAll ? '내 메뉴만 보기' : '모든 메뉴 보기';
+  }
+
+  document.querySelectorAll('.tile').forEach((t) => {
+    t.addEventListener('click', (e) => { if (t.classList.contains('soon')) e.preventDefault(); });
+  });
+
+  $('show-all-btn').addEventListener('click', () => {
+    showAll = !showAll;
+    store.set('fh-all-' + me.id, showAll ? '1' : '0');
+    $('menu').hidden = true;
+    setupTiles();
+  });
+
+  // ---------- 화면 이동 (#chat ↔ 홈, 휴대폰 뒤로가기 지원) ----------
+  function route() {
+    if (!me) return;
+    if (location.hash === '#chat') {
+      show('chat');
+      if (chatDirty) render('bottom');
+      else markSeen();
+      if (!isTouch) input.focus();
+    } else {
+      show('home');
+    }
+  }
+  let openedFromHome = false;
+  window.addEventListener('hashchange', route);
+  document.querySelector('.tile[data-app="chat"]').addEventListener('click', () => { openedFromHome = true; });
+  $('back-btn').addEventListener('click', () => {
+    if (openedFromHome) { openedFromHome = false; history.back(); }   // 홈에서 들어왔으면 뒤로
+    else { history.replaceState(null, '', location.pathname); route(); }   // 주소로 바로 들어왔으면 홈으로
+  });
 
   // ---------- 보내기 ----------
   const input = $('msg-input');
@@ -363,6 +464,8 @@
     await sb.auth.signOut();
     me = null; msgs = []; ids = new Set(); members = new Map();
     $('msg-list').replaceChildren();
+    $('chat-badge').hidden = true;
+    if (location.hash) history.replaceState(null, '', location.pathname);
     show('login');
   }
 

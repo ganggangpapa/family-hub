@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-  <title>가족방</title>
+  <title>가족 홈</title>
   <meta name="theme-color" content="#f6f3ee">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="가족방">
+  <meta name="apple-mobile-web-app-title" content="가족 홈">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
   <link rel="stylesheet" href="style.css">
@@ -14,14 +14,14 @@
 <body>
   <!-- 불러오는 중 -->
   <section id="screen-loading" class="screen center">
-    <p class="muted">가족방을 여는 중…</p>
+    <p class="muted">가족 홈을 여는 중…</p>
   </section>
 
   <!-- 로그인: 누구인지 고르기 -->
   <section id="screen-login" class="screen center" hidden>
     <div class="card">
-      <h1>🏠 가족방</h1>
-      <p class="muted">우리 가족만 들어오는 채팅방이에요.<br>오늘저녁 앱에서 쓰던 가족 계정으로 들어와요.</p>
+      <h1>🏠 가족 홈</h1>
+      <p class="muted">우리 가족만 들어오는 곳이에요.<br>오늘저녁 앱에서 쓰던 가족 계정으로 들어와요.</p>
       <button class="btn primary" data-go="parent">부모 (이메일로 로그인)</button>
       <button class="btn" data-go="child">아이 (연결 코드 입력)</button>
     </div>
@@ -73,15 +73,50 @@
     </div>
   </section>
 
-  <!-- 가족방 -->
-  <section id="screen-chat" class="screen chat" hidden>
+  <!-- 가족 홈: 메뉴 고르기 -->
+  <section id="screen-home" class="screen home" hidden>
     <header class="chat-head">
-      <h1 id="family-name">가족방</h1>
+      <h1 id="family-name">가족 홈</h1>
       <button class="icon-btn" id="menu-btn" aria-label="메뉴" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu" id="menu" hidden>
         <p class="menu-me" id="menu-me"></p>
+        <button id="show-all-btn">모든 메뉴 보기</button>
         <button id="logout-btn">로그아웃</button>
       </div>
+    </header>
+    <main class="home-body">
+      <p class="hello" id="hello"></p>
+      <nav class="tiles" aria-label="가족 메뉴">
+        <a class="tile" data-app="dinner" href="#">
+          <span class="tile-icon" aria-hidden="true">🍚</span>
+          <span class="tile-name">오늘저녁</span>
+          <span class="tile-desc">메뉴 추천 · 저녁 투표</span>
+        </a>
+        <a class="tile" data-app="harunote" href="#">
+          <span class="tile-icon" aria-hidden="true">✏️</span>
+          <span class="tile-name">초등학습</span>
+          <span class="tile-desc">하루노트 · 오늘의 10문제</span>
+        </a>
+        <a class="tile" data-app="nuneul" href="#">
+          <span class="tile-icon" aria-hidden="true">📘</span>
+          <span class="tile-name">중등학습</span>
+          <span class="tile-desc">눈을뜨자 · 중학 공부</span>
+        </a>
+        <a class="tile" data-app="chat" href="#chat">
+          <span class="tile-icon" aria-hidden="true">💬</span>
+          <span class="tile-name">가족채팅</span>
+          <span class="tile-desc" id="chat-preview">우리 가족 대화방</span>
+          <span class="badge" id="chat-badge" hidden></span>
+        </a>
+      </nav>
+    </main>
+  </section>
+
+  <!-- 가족채팅 -->
+  <section id="screen-chat" class="screen chat" hidden>
+    <header class="chat-head">
+      <button class="icon-btn" id="back-btn" aria-label="가족 홈으로">‹</button>
+      <h1>가족채팅</h1>
     </header>
     <div class="conn" id="conn" hidden>연결이 잠시 끊겼어요. 다시 잇는 중…</div>
     <main class="messages" id="messages" aria-live="polite">

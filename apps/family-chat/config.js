@@ -3,4 +3,10 @@
 window.FAMILY_CHAT_CONFIG = {
   supabaseUrl: '',          // 예: https://xxxx.supabase.co
   supabaseKey: '',          // Publishable 키 (sb_publishable_... 또는 anon 키)
+  // 가족 홈 메뉴가 여는 앱 주소. 비워 두면 "준비 중"으로 보입니다.
+  apps: {
+    dinner: '',             // 오늘저녁뭐먹지
+    harunote: '',           // 하루노트 (초등학습)
+    nuneul: '',             // 눈을뜨자 (중등학습)
+  },
 };

@@ -72,7 +72,34 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
 .error { color: var(--error); margin: 0; font-size: 14px; min-height: 0; }
 .error:empty { display: none; }
 
-/* ---------- 가족방 ---------- */
+/* ---------- 가족 홈 ---------- */
+.home { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; }
+.home-body { padding: 16px 16px calc(24px + env(safe-area-inset-bottom)); }
+.hello { margin: 4px 2px 16px; font-size: 17px; color: var(--muted); }
+.tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.tile {
+  position: relative;
+  display: flex; flex-direction: column; gap: 4px;
+  min-height: 132px; padding: 18px 16px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 22px;
+  color: var(--text); text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.tile:active { transform: scale(.98); }
+.tile:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile-icon { font-size: 34px; line-height: 1; margin-bottom: 6px; }
+.tile-name { font-size: 18px; font-weight: 700; }
+.tile-desc { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile.soon { opacity: .55; }
+.badge {
+  position: absolute; top: 12px; right: 12px;
+  min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px;
+  background: var(--accent); color: var(--accent-text);
+  font-size: 13px; font-weight: 700; line-height: 24px; text-align: center;
+}
+@media (min-width: 560px) { .tiles { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* ---------- 가족채팅 ---------- */
 .chat {
   height: 100dvh;
   display: flex; flex-direction: column;
@@ -85,6 +112,7 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
   border-bottom: 1px solid var(--line);
   background: var(--bg);
 }
+.chat-head .icon-btn#back-btn { font-size: 30px; margin-left: -8px; }
 .chat-head h1 { flex: 1; font-size: 18px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .icon-btn {
   width: 40px; height: 40px; border-radius: 50%;
