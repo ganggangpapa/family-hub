@@ -5,8 +5,8 @@ window.FAMILY_CHAT_CONFIG = {
   supabaseKey: 'sb_publishable_eDXZcsccvUyZ2vjbS_bQTA_QyASaSyH',   // Publishable 키 (공개용)
   // 가족 홈 메뉴가 여는 앱 주소. 비워 두면 "준비 중"으로 보입니다.
   apps: {
-    dinner: '',             // 오늘저녁뭐먹지
-    harunote: '',           // 하루노트 (초등학습)
-    nuneul: '',             // 중학노트·눈을뜨자 (중등학습)
+    dinner: 'https://familydinner-feast.vercel.app/',             // 오늘저녁뭐먹지
+    harunote: 'https://harunote-black.vercel.app/',           // 하루노트 (초등학습)
+    nuneul: 'https://middle-school-today-note.vercel.app/',             // 중학노트·눈을뜨자 (중등학습)
   },
 };
