@@ -7,6 +7,6 @@ window.FAMILY_CHAT_CONFIG = {
   apps: {
     dinner: '',             // 오늘저녁뭐먹지
     harunote: '',           // 하루노트 (초등학습)
-    nuneul: '',             // 눈을뜨자 (중등학습)
+    nuneul: '',             // 중학노트·눈을뜨자 (중등학습)
   },
 };

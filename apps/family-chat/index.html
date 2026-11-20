@@ -111,6 +111,7 @@
       <button class="icon-btn" id="menu-btn" aria-label="메뉴" aria-haspopup="true" aria-expanded="false">⋯</button>
       <div class="menu" id="menu" hidden>
         <p class="menu-me" id="menu-me"></p>
+        <button id="install-btn">📲 앱 설치하기</button>
         <button id="show-all-btn">모든 메뉴 보기</button>
         <button id="password-btn" hidden>비밀번호 정하기</button>
         <button id="logout-btn">로그아웃</button>
@@ -119,8 +120,15 @@
     <main class="home-body">
       <p class="hello" id="hello"></p>
       <div class="tip pw-tip" id="pw-tip" hidden>
-        홈 화면 아이콘에서도 로그인하려면 <b>비밀번호</b>를 정해 두세요.
+        <span>홈 화면 아이콘에서도 로그인하려면 <b>비밀번호</b>를 정해 두세요.</span>
         <button class="btn primary" type="button" id="pw-tip-btn">비밀번호 정하기</button>
+      </div>
+      <div class="tip install-tip" id="install-tip" hidden>
+        <span>📲 우리 가족 앱을 골라서 핸드폰 홈 화면에 설치해 보세요.</span>
+        <span class="btn-row">
+          <button class="btn primary" type="button" id="install-tip-btn">앱 고르기</button>
+          <button class="btn" type="button" id="install-tip-close">다음에</button>
+        </span>
       </div>
       <nav class="tiles" aria-label="가족 메뉴">
         <a class="tile" data-app="dinner" href="#">
@@ -136,7 +144,7 @@
         <a class="tile" data-app="nuneul" href="#">
           <span class="tile-icon" aria-hidden="true">📘</span>
           <span class="tile-name">중등학습</span>
-          <span class="tile-desc">눈을뜨자 · 중학 공부</span>
+          <span class="tile-desc">중학노트 · 중학 공부</span>
         </a>
         <a class="tile" data-app="chat" href="#chat">
           <span class="tile-icon" aria-hidden="true">💬</span>
@@ -145,6 +153,19 @@
           <span class="badge" id="chat-badge" hidden></span>
         </a>
       </nav>
+    </main>
+  </section>
+
+  <!-- 앱 설치하기: 고른 앱을 홈 화면에 추가하는 방법 안내 -->
+  <section id="screen-install" class="screen home" hidden>
+    <header class="chat-head">
+      <button class="icon-btn back" id="install-back" aria-label="가족 홈으로">‹</button>
+      <h1>앱 설치하기</h1>
+    </header>
+    <main class="home-body">
+      <p class="hello">설치할 앱을 고르세요. 홈 화면에 아이콘이 생겨요.</p>
+      <ul class="install-list" id="install-list"></ul>
+      <p class="muted small">💡 설치한 앱은 각자 처음 한 번만 로그인하면 돼요. 앱마다 로그인을 따로 기억해요.</p>
     </main>
   </section>
 

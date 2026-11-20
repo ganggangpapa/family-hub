@@ -1,4 +1,4 @@
-// 가족 홈: 메뉴(오늘저녁 · 초등학습 · 중등학습 · 가족채팅) + 가족채팅(실시간, 이전 메시지)
+// 가족 홈: 메뉴(오늘저녁 · 초등학습 · 중등학습 · 가족채팅) + 가족채팅(실시간, 이전 메시지) + 앱 설치 안내
 // 서버 규칙(RLS)은 family-hub/supabase/schema.sql 에 있습니다.
 (() => {
   'use strict';
@@ -109,6 +109,7 @@
       lastSeen = Number(store.get('fh-seen-' + me.id)) || 0;
       showAll = store.get('fh-all-' + me.id) === '1';
       setupTiles();
+      $('install-tip').hidden = installTipHidden();
 
       msgs = []; ids = new Set(); noMoreOlder = false; chatDirty = true;
       route();
@@ -392,15 +393,160 @@
     setupTiles();
   });
 
-  // ---------- 화면 이동 (#chat ↔ 홈, 휴대폰 뒤로가기 지원) ----------
+  // ---------- 앱 설치하기 ----------
+  // 다른 주소의 앱은 웹페이지가 대신 설치해 줄 수 없어서, 고른 앱을 열고 "홈 화면에 추가" 방법을 안내합니다.
+  const APPS = {
+    home:     { icon: '🏠', name: '가족 홈', desc: '지금 이 앱' },
+    dinner:   { icon: '🍚', name: '오늘저녁', desc: '메뉴 추천 · 저녁 투표' },
+    harunote: { icon: '✏️', name: '하루노트', desc: '초등학습 · 오늘의 10문제' },
+    nuneul:   { icon: '📘', name: '중학노트', desc: '중등학습 · 중학 공부' },
+  };
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let installPrompt = null;   // 안드로이드 크롬: 가족 홈 자체를 바로 설치하는 창
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installPrompt = e; });
+  window.addEventListener('appinstalled', () => { store.set('fh-installed-home', '1'); installPrompt = null; if (location.hash === '#install') renderInstall(); });
+
+  function installTipHidden() {
+    return store.get('fh-install-tip-off') === '1' || !Object.keys(APPS).some((k) => installable(k) && !isInstalled(k));
+  }
+  function installable(k) {
+    if (k === 'home') return !isStandalone();
+    return menuFor(me).includes(k);
+  }
+  function isInstalled(k) {
+    if (k === 'home' && isStandalone()) return true;
+    return store.get('fh-installed-' + k) === '1';
+  }
+
+  function guideSteps(k, url) {
+    const name = APPS[k].name;
+    if (k === 'home') {
+      if (isIOS) return ['아래쪽(또는 위쪽) <b>공유 버튼(□↑)</b>을 눌러요.', '<b>홈 화면에 추가</b> → <b>추가</b>를 눌러요.'];
+      if (isAndroid) return ['오른쪽 위 <b>⋮</b>를 눌러요.', '<b>홈 화면에 추가</b>(또는 <b>앱 설치</b>)를 눌러요.'];
+      return ['주소창 오른쪽의 <b>설치 아이콘</b>이나 브라우저 메뉴에서 <b>앱 설치</b>를 눌러요.'];
+    }
+    const out = [];
+    if (isIOS) {
+      if (isStandalone()) out.push('<b>주소 복사</b>를 누르고 <b>Safari</b>를 열어 주소창에 붙여 넣어요.');
+      else out.push('<b>' + name + ' 열기</b>를 눌러요. Safari 새 탭에서 열려요.');
+      out.push('아래쪽(또는 위쪽) <b>공유 버튼(□↑)</b> → <b>홈 화면에 추가</b> → <b>추가</b>.');
+    } else if (isAndroid) {
+      out.push('<b>' + name + ' 열기</b>를 눌러요.');
+      if (isStandalone()) out.push('열린 화면에서 <b>⋮ → Chrome에서 열기</b>를 눌러요.');
+      out.push('오른쪽 위 <b>⋮ → 홈 화면에 추가</b>(또는 <b>앱 설치</b>).');
+    } else {
+      out.push('<b>' + name + ' 열기</b>를 눌러요.');
+      out.push('핸드폰이라면 브라우저 메뉴에서 <b>홈 화면에 추가</b>를 눌러요.');
+    }
+    out.push('처음 열 때 한 번 로그인해요.');
+    return out;
+  }
+
+  let openGuide = null;       // 안내를 펼친 앱
+  function renderInstall() {
+    const list = $('install-list');
+    list.textContent = '';
+    const urls = cfg.apps || {};
+    Object.keys(APPS).filter(installable).forEach((k) => {
+      const a = APPS[k];
+      const url = k === 'home' ? location.origin + location.pathname : urls[k];
+      const done = isInstalled(k);
+      const li = document.createElement('li');
+      li.className = 'install-item' + (url ? '' : ' soon');
+      li.dataset.app = k;
+      li.innerHTML = '<div class="install-head"><span class="tile-icon" aria-hidden="true"></span>'
+        + '<span class="install-name"><span class="tile-name"></span><span class="tile-desc"></span></span>'
+        + '<button class="btn" type="button"></button></div>';
+      li.querySelector('.tile-icon').textContent = a.icon;
+      li.querySelector('.tile-name').textContent = a.name;
+      li.querySelector('.tile-desc').textContent = url ? a.desc : '준비 중 (주소가 아직 없어요)';
+      const btn = li.querySelector('button');
+      btn.textContent = !url ? '준비 중' : done ? '✓ 설치함' : openGuide === k ? '닫기' : '설치';
+      btn.disabled = !url;
+      if (done) btn.classList.add('done'); else if (url) btn.classList.add('primary');
+      btn.setAttribute('aria-expanded', String(openGuide === k));
+      btn.addEventListener('click', () => {
+        if (k === 'home' && installPrompt && !done) {   // 안드로이드: 바로 설치 창
+          const p = installPrompt; installPrompt = null;
+          p.prompt();
+          p.userChoice.then((c) => { if (c.outcome === 'accepted') store.set('fh-installed-home', '1'); renderInstall(); });
+          return;
+        }
+        openGuide = openGuide === k ? null : k;
+        renderInstall();
+      });
+      if (url && openGuide === k) li.appendChild(guideBox(k, url, done));
+      list.appendChild(li);
+    });
+  }
+
+  function guideBox(k, url, done) {
+    const box = document.createElement('div');
+    box.className = 'guide';
+    const ol = document.createElement('ol');
+    ol.className = 'steps';
+    guideSteps(k, url).forEach((h) => { const li = document.createElement('li'); li.innerHTML = h; ol.appendChild(li); });
+    box.appendChild(ol);
+    const row = document.createElement('div');
+    row.className = 'btn-row';
+    if (k !== 'home') {
+      const open = document.createElement('a');
+      open.className = 'btn primary';
+      open.href = url; open.target = '_blank'; open.rel = 'noopener';
+      open.textContent = APPS[k].name + ' 열기';
+      row.appendChild(open);
+      const copy = document.createElement('button');
+      copy.className = 'btn'; copy.type = 'button'; copy.textContent = '주소 복사';
+      copy.addEventListener('click', async () => {
+        try { await navigator.clipboard.writeText(url); copy.textContent = '복사했어요 ✓'; }
+        catch (e) { prompt('이 주소를 길게 눌러 복사하세요', url); }
+      });
+      row.appendChild(copy);
+    }
+    const mark = document.createElement('button');
+    mark.className = 'btn'; mark.type = 'button';
+    mark.textContent = done ? '설치 표시 지우기' : '설치했어요 ✓';
+    mark.addEventListener('click', () => {
+      store.set('fh-installed-' + k, done ? '0' : '1');
+      openGuide = null;
+      renderInstall();
+    });
+    row.appendChild(mark);
+    box.appendChild(row);
+    return box;
+  }
+
+  let installFromHome = false;
+  function openInstall() {
+    $('menu').hidden = true;
+    installFromHome = true;
+    location.hash = '#install';
+  }
+  $('install-btn').addEventListener('click', openInstall);
+  $('install-tip-btn').addEventListener('click', openInstall);
+  $('install-tip-close').addEventListener('click', () => { store.set('fh-install-tip-off', '1'); $('install-tip').hidden = true; });
+  $('install-back').addEventListener('click', () => {
+    if (installFromHome) { installFromHome = false; history.back(); }
+    else { history.replaceState(null, '', location.pathname); route(); }
+  });
+
+  // ---------- 화면 이동 (#chat · #install ↔ 홈, 휴대폰 뒤로가기 지원) ----------
   function route() {
     if (!me) return;
-    if (location.hash === '#chat') {
+    if (location.hash === '#install') {
+      openGuide = null;
+      renderInstall();
+      show('install');
+    } else if (location.hash === '#chat') {
       show('chat');
       if (chatDirty) render('bottom');
       else markSeen();
       if (!isTouch) input.focus();
     } else {
+      $('install-tip').hidden = installTipHidden();
       show('home');
     }
   }
