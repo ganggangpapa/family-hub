@@ -14,8 +14,9 @@
   }
 
   if (!cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
-    $('screen-loading').querySelector('p').textContent =
-      '설정이 아직 비어 있어요. config.js에 Supabase 주소와 공개 키를 넣어 주세요.';
+    $('screen-loading').querySelector('p').textContent = !window.supabase
+      ? '필요한 파일을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.'
+      : '설정이 아직 비어 있어요. config.js에 Supabase 주소와 공개 키를 넣어 주세요.';
     return;
   }
 
