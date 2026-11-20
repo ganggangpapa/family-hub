@@ -14,6 +14,7 @@
 - 키: Project URL과 Publishable 키는 공개용이라 코드에 넣어도 됩니다. **Secret(service_role) 키와 데이터베이스 비밀번호는 어디에도 쓰지 않습니다.**
 - SQL을 바꾸면 부모에게 "SQL Editor에서 다시 실행해 주세요"라고 안내합니다. 표·열을 지우는 변경은 먼저 묻습니다.
 - 앱 화면 코드는 각 앱 저장소에서 고칩니다. 이 저장소에는 넣지 않습니다.
+  - 예외: 가족방(`apps/family-chat`)은 세 앱을 잇는 공용 앱이라 이 저장소에 둡니다 (`docs/family-chat-spec.md`).
 
 ## 작업 방식
 - `main`에 직접 push하지 않고 `claude/` 브랜치 → PR. PR 제목·커밋 메시지는 한국어.

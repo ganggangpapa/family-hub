@@ -7,6 +7,8 @@
 | --- | --- |
 | [docs/FAMILY_HUB.md](docs/FAMILY_HUB.md) | 가족 연결 계획: 방향, 설계 원칙, 단계별 할 일 |
 | [supabase/schema.sql](supabase/schema.sql) | 공용 서버(Supabase)의 표와 보안 규칙. SQL Editor에서 실행 |
+| [docs/family-chat-spec.md](docs/family-chat-spec.md) | 가족방(가족 전용 채팅) 설계와 단계 |
+| [apps/family-chat/](apps/family-chat/) | 가족방 웹앱 (빌드 없음, Vercel 배포). 공개 설정값은 `config.js` |
 
 | 앱 | 저장소 | 연결 순서 |
 | --- | --- | --- |
