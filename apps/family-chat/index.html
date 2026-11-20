@@ -14,16 +14,21 @@
 <body>
   <!-- 불러오는 중 -->
   <section id="screen-loading" class="screen center">
-    <p class="muted">가족 홈을 여는 중…</p>
+    <div class="card">
+      <p class="muted" id="loading-msg">가족 홈을 여는 중…</p>
+      <button class="btn primary" id="retry-btn" hidden>다시 시도</button>
+    </div>
   </section>
 
   <!-- 로그인: 누구인지 고르기 -->
   <section id="screen-login" class="screen center" hidden>
     <div class="card">
       <h1>🏠 가족 홈</h1>
+      <p class="tip" id="inapp-tip" hidden>카카오톡 같은 앱 안에서 열면 로그인이 자주 풀려요. 오른쪽 아래(또는 위) <b>⋯</b> → <b>다른 브라우저로 열기</b>를 눌러 주세요.</p>
       <p class="muted">우리 가족만 들어오는 곳이에요.<br>오늘저녁 앱에서 쓰던 가족 계정으로 들어와요.</p>
       <button class="btn primary" data-go="parent">부모 (이메일로 로그인)</button>
       <button class="btn" data-go="child">아이 (연결 코드 입력)</button>
+      <p class="muted small">💡 핸드폰 브라우저에서 <b>홈 화면에 추가</b>한 뒤, 그 아이콘으로 열어서 로그인하세요. 아이콘과 브라우저는 로그인을 따로 기억해요.</p>
     </div>
   </section>
 

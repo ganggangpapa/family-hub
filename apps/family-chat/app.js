@@ -14,7 +14,7 @@
   }
 
   if (!cfg.supabaseUrl || !cfg.supabaseKey || !window.supabase) {
-    $('screen-loading').querySelector('p').textContent = !window.supabase
+    $('loading-msg').textContent = !window.supabase
       ? '필요한 파일을 불러오지 못했어요. 인터넷 연결을 확인하고 새로고침해 주세요.'
       : '설정이 아직 비어 있어요. config.js에 Supabase 주소와 공개 키를 넣어 주세요.';
     return;
@@ -45,16 +45,35 @@
   };
 
   // ---------- 시작 ----------
+  let failed = false;         // 인터넷 문제로 열지 못한 상태 (로그인은 그대로)
+
   async function start() {
+    // 브라우저가 저장 공간을 정리할 때 로그인 정보를 지우지 않도록 요청 (홈 화면에 추가하면 대부분 허락됨)
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 무시 */ }
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { show('login'); return; }
     await enter();
   }
 
   sb.auth.onAuthStateChange((event) => {
-    // 메일의 로그인 링크를 눌러 들어온 경우
     // (이 콜백 안에서 바로 서버를 부르면 멈출 수 있어 한 박자 뒤에 실행)
+    // 메일의 로그인 링크를 눌러 들어온 경우
     if (event === 'SIGNED_IN' && !me && !entering && !$('screen-loading').hidden) setTimeout(enter, 0);
+    // 서버가 로그인을 정말로 끝낸 경우(다른 곳에서 로그아웃, 연결 끊김 등)에만 로그인 화면으로
+    if (event === 'SIGNED_OUT' && me) setTimeout(() => resetToLogin('로그인이 끝났어요. 다시 로그인해 주세요.'), 0);
+  });
+
+  function showRetry(msg) {
+    failed = true;
+    show('loading');
+    $('loading-msg').textContent = msg;
+    $('retry-btn').hidden = false;
+  }
+  $('retry-btn').addEventListener('click', () => { $('retry-btn').hidden = true; $('loading-msg').textContent = '다시 여는 중…'; enter(); });
+  // 인터넷이 돌아오거나 화면으로 돌아오면 저절로 다시 시도
+  window.addEventListener('online', () => { if (failed && !entering) enter(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && failed && !entering) enter();
   });
 
   async function enter() {
@@ -62,8 +81,11 @@
     entering = true;
     try {
       show('loading');
-      const { data: { user } } = await sb.auth.getUser();
-      if (!user) { show('login'); return; }
+      $('retry-btn').hidden = true;
+      // 기기에 저장된 로그인 정보로 판단 (인터넷이 잠깐 끊겨도 로그아웃으로 보지 않음)
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) { show('login'); return; }
+      const user = session.user;
       isAnon = !!user.is_anonymous;
 
       const { data: m, error } = await sb.rpc('my_member');
@@ -94,10 +116,11 @@
       }
       addMessages(first, 'initial');
       subscribe();
+      failed = false;
     } catch (e) {
       console.error(e);
-      show('login');
-      alert('가족방을 열지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.\n(' + (e.message || e) + ')');
+      // 로그인 정보는 지우지 않고, 다시 시도할 수 있게만 함
+      showRetry('지금 가족 홈에 연결하지 못했어요. 인터넷 연결을 확인하고 다시 시도해 주세요.');
     } finally {
       entering = false;
     }
@@ -461,13 +484,18 @@
   $('nofamily-logout').addEventListener('click', signOut);
 
   async function signOut() {
-    if (channel) { sb.removeChannel(channel); channel = null; }
     await sb.auth.signOut();
-    me = null; msgs = []; ids = new Set(); members = new Map();
+    resetToLogin();
+  }
+
+  function resetToLogin(msg) {
+    if (channel) { sb.removeChannel(channel); channel = null; }
+    me = null; msgs = []; ids = new Set(); members = new Map(); failed = false;
     $('msg-list').replaceChildren();
     $('chat-badge').hidden = true;
     if (location.hash) history.replaceState(null, '', location.pathname);
     show('login');
+    if (msg) alert(msg);
   }
 
   // ---------- 로그인 화면 ----------
@@ -548,6 +576,9 @@
       busy(form, false);
     }
   });
+
+  // 카카오톡·네이버 같은 앱 안에서 열면 로그인이 따로 저장되어 자주 풀려 보임 → 안내
+  if (/KAKAOTALK|NAVER\(inapp|Instagram|FBAN|FBAV|Line\//i.test(navigator.userAgent)) $('inapp-tip').hidden = false;
 
   start();
 })();
