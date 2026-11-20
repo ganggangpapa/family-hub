@@ -87,6 +87,7 @@
       if (!session) { show('login'); return; }
       const user = session.user;
       isAnon = !!user.is_anonymous;
+      const hasPassword = !!(user.user_metadata && user.user_metadata.has_password);
 
       const { data: m, error } = await sb.rpc('my_member');
       if (error) throw error;
@@ -102,6 +103,9 @@
       $('menu-me').textContent = '나: ' + (me.nickname || '') + (me.role === 'parent' ? ' (부모)' : '');
       $('logout-btn').textContent = isAnon ? '이 폰 연결 끊기' : '로그아웃';
       $('hello').textContent = (me.nickname || '') + '님, 무엇을 할까요?';
+      $('password-btn').hidden = isAnon;
+      $('password-btn').textContent = hasPassword ? '비밀번호 바꾸기' : '비밀번호 정하기';
+      $('pw-tip').hidden = isAnon || hasPassword;
       lastSeen = Number(store.get('fh-seen-' + me.id)) || 0;
       showAll = store.get('fh-all-' + me.id) === '1';
       setupTiles();
@@ -509,10 +513,35 @@
 
   let pendingEmail = '';
 
+  // 이메일 + 비밀번호 로그인 (홈 화면 아이콘 안에서도 바로 됨)
   $('form-email').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.currentTarget;
     $('email-error').textContent = '';
+    const email = $('email').value.trim();
+    const password = $('password').value;
+    if (!password) {
+      $('email-error').textContent = '비밀번호를 넣어 주세요. 아직 없다면 아래 "메일로 로그인 링크 받기"를 눌러 주세요.';
+      return;
+    }
+    busy(form, true);
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    busy(form, false);
+    if (error) {
+      $('email-error').textContent = /invalid|credentials/i.test(error.message)
+        ? '이메일이나 비밀번호가 맞지 않아요. 비밀번호를 정한 적이 없다면 아래 "메일로 로그인 링크 받기"를 눌러 주세요.'
+        : '로그인하지 못했어요: ' + error.message;
+      return;
+    }
+    $('password').value = '';
+    await enter();
+  });
+
+  // 메일로 로그인 링크 받기 (비밀번호가 없을 때)
+  $('magic-btn').addEventListener('click', async () => {
+    const form = $('form-email');
+    $('email-error').textContent = '';
+    if (!$('email').reportValidity()) return;
     const email = $('email').value.trim();
     busy(form, true);
     const { error } = await sb.auth.signInWithOtp({
@@ -529,10 +558,44 @@
       return;
     }
     pendingEmail = email;
-    $('otp-help').textContent = email + ' 로 보낸 메일의 숫자 코드를 넣어 주세요. 메일 속 링크를 눌러도 들어올 수 있어요.';
+    $('otp-help').textContent = email + ' 로 로그인 메일을 보냈어요.';
     $('form-email').hidden = true;
     $('form-otp').hidden = false;
-    $('otp').focus();
+  });
+
+  // ---------- 비밀번호 정하기 ----------
+  function openPassword() {
+    $('menu').hidden = true;
+    $('password-error').textContent = '';
+    show('password');
+    $('new-password').focus();
+  }
+  $('password-btn').addEventListener('click', openPassword);
+  $('pw-tip-btn').addEventListener('click', openPassword);
+  $('password-cancel').addEventListener('click', () => route());
+
+  $('form-password').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const pw = $('new-password').value;
+    $('password-error').textContent = '';
+    if (pw.length < 8) { $('password-error').textContent = '8자 이상으로 정해 주세요.'; return; }
+    if (pw !== $('new-password2').value) { $('password-error').textContent = '두 비밀번호가 달라요.'; return; }
+    busy(form, true);
+    const { error } = await sb.auth.updateUser({ password: pw, data: { has_password: true } });
+    busy(form, false);
+    if (error) {
+      $('password-error').textContent = /different/i.test(error.message) ? '지금 비밀번호와 같아요. 다른 걸로 정해 주세요.'
+        : /reauth/i.test(error.message) ? '보안을 위해 메일 링크로 다시 로그인한 뒤 바로 정해 주세요.'
+        : /weak|short|characters/i.test(error.message) ? '더 길거나 어려운 비밀번호로 정해 주세요.'
+        : '저장하지 못했어요: ' + error.message;
+      return;
+    }
+    $('new-password').value = ''; $('new-password2').value = '';
+    $('pw-tip').hidden = true;
+    $('password-btn').textContent = '비밀번호 바꾸기';
+    alert('비밀번호를 정했어요. 이제 홈 화면 아이콘에서 이메일 + 비밀번호로 로그인하세요.');
+    route();
   });
 
   $('otp-back').addEventListener('click', () => {

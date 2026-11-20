@@ -71,6 +71,8 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
 .btn:disabled { opacity: .6; cursor: default; }
 .tip { margin: 0; padding: 10px 12px; border-radius: 12px; background: #fff3c4; color: #5c4a00; font-size: 14px; }
 .small { font-size: 13px; margin: 4px 0 0; }
+.steps { margin: 0 0 8px; padding-left: 20px; font-size: 14px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.pw-tip { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
 .error { color: var(--error); margin: 0; font-size: 14px; min-height: 0; }
 .error:empty { display: none; }
 

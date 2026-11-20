@@ -37,19 +37,28 @@
     <form class="card" id="form-email">
       <h2>부모 로그인</h2>
       <label>이메일
-        <input type="email" id="email" autocomplete="email" required placeholder="오늘저녁에서 쓰던 이메일">
+        <input type="email" id="email" autocomplete="username" required placeholder="오늘저녁에서 쓰던 이메일">
       </label>
-      <button class="btn primary" type="submit">로그인 코드 받기</button>
+      <label>비밀번호
+        <input type="password" id="password" autocomplete="current-password" placeholder="정해 둔 비밀번호">
+      </label>
+      <button class="btn primary" type="submit">로그인</button>
       <p class="error" id="email-error" role="alert"></p>
+      <button class="btn" type="button" id="magic-btn">비밀번호가 없어요 → 메일로 로그인 링크 받기</button>
       <button class="btn link" type="button" data-go="login">← 처음으로</button>
     </form>
     <form class="card" id="form-otp" hidden>
-      <h2>메일로 온 코드</h2>
+      <h2>메일을 보냈어요 📮</h2>
       <p class="muted" id="otp-help"></p>
-      <label>코드
+      <ol class="steps">
+        <li>메일 속 <b>로그인</b> 링크를 눌러요. 브라우저(Safari·Chrome)에서 가족 홈이 열려요.</li>
+        <li>그 화면 오른쪽 위 <b>⋯ → 비밀번호 정하기</b>.</li>
+        <li>다음부터는 홈 화면 아이콘에서 <b>이메일 + 비밀번호</b>로 로그인해요.</li>
+      </ol>
+      <label>메일에 숫자 코드가 있다면 여기에
         <input type="text" id="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required placeholder="숫자 코드">
       </label>
-      <button class="btn primary" type="submit">들어가기</button>
+      <button class="btn" type="submit">코드로 들어가기</button>
       <p class="error" id="otp-error" role="alert"></p>
       <button class="btn link" type="button" id="otp-back">← 이메일 다시 입력</button>
     </form>
@@ -66,6 +75,23 @@
       <button class="btn primary" type="submit">연결하기</button>
       <p class="error" id="link-error" role="alert"></p>
       <button class="btn link" type="button" data-go="login">← 처음으로</button>
+    </form>
+  </section>
+
+  <!-- 부모: 비밀번호 정하기 -->
+  <section id="screen-password" class="screen center" hidden>
+    <form class="card" id="form-password">
+      <h2>비밀번호 정하기</h2>
+      <p class="muted">홈 화면 아이콘이나 다른 기기에서 <b>이메일 + 비밀번호</b>로 바로 로그인할 수 있어요. 8자 이상으로 정해 주세요.</p>
+      <label>새 비밀번호
+        <input type="password" id="new-password" autocomplete="new-password" minlength="8" required>
+      </label>
+      <label>한 번 더
+        <input type="password" id="new-password2" autocomplete="new-password" minlength="8" required>
+      </label>
+      <button class="btn primary" type="submit">저장</button>
+      <p class="error" id="password-error" role="alert"></p>
+      <button class="btn link" type="button" id="password-cancel">← 가족 홈으로</button>
     </form>
   </section>
 
@@ -86,11 +112,16 @@
       <div class="menu" id="menu" hidden>
         <p class="menu-me" id="menu-me"></p>
         <button id="show-all-btn">모든 메뉴 보기</button>
+        <button id="password-btn" hidden>비밀번호 정하기</button>
         <button id="logout-btn">로그아웃</button>
       </div>
     </header>
     <main class="home-body">
       <p class="hello" id="hello"></p>
+      <div class="tip pw-tip" id="pw-tip" hidden>
+        홈 화면 아이콘에서도 로그인하려면 <b>비밀번호</b>를 정해 두세요.
+        <button class="btn primary" type="button" id="pw-tip-btn">비밀번호 정하기</button>
+      </div>
       <nav class="tiles" aria-label="가족 메뉴">
         <a class="tile" data-app="dinner" href="#">
           <span class="tile-icon" aria-hidden="true">🍚</span>
