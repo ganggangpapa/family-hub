@@ -38,6 +38,16 @@ create table if not exists public.link_codes (
   used_at    timestamptz
 );
 
+-- 가족방 등 "같은 아이, 다른 앱·기기" 연결 (2026-11-20 추가)
+-- members.user_id는 한 칸뿐이라, 아이 폰의 앱마다 따로 로그인하면 먼저 연결한 앱이 끊김.
+-- 그래서 추가로 연결된 로그인을 여기에 적어 둠. 함수로만 다룸 (직접 접근 불가).
+create table if not exists public.member_logins (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  member_id  uuid not null references public.members(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists member_logins_member_idx on public.member_logins(member_id);
+
 create table if not exists public.study_daily (
   id         bigint generated always as identity primary key,
   family_id  uuid not null references public.families(id) on delete cascade,
@@ -58,15 +68,17 @@ create table if not exists public.messages (
   family_id   uuid not null references public.families(id) on delete cascade,
   from_member uuid not null references public.members(id) on delete cascade,
   to_member   uuid references public.members(id) on delete cascade,   -- 비우면 가족 모두에게
-  kind        text not null check (kind in ('cheer', 'sticker', 'show', 'meal_request')),  -- 응원 / 칭찬 스티커 / 보여 주기 / 먹고 싶어요
-  body        text not null check (char_length(body) <= 200),
+  kind        text not null check (kind in ('cheer', 'sticker', 'show', 'meal_request', 'text')),  -- 응원 / 칭찬 스티커 / 보여 주기 / 먹고 싶어요 / 가족방 채팅
+  body        text not null check (char_length(body) between 1 and 500),
   created_at  timestamptz not null default now(),
   read_at     timestamptz
 );
 create index if not exists messages_family_idx on public.messages(family_id, created_at desc);
 -- 이미 표를 만든 뒤 다시 실행할 때를 위해 종류 목록을 새로 맞춤
 alter table public.messages drop constraint if exists messages_kind_check;
-alter table public.messages add constraint messages_kind_check check (kind in ('cheer', 'sticker', 'show', 'meal_request'));
+alter table public.messages add constraint messages_kind_check check (kind in ('cheer', 'sticker', 'show', 'meal_request', 'text'));
+alter table public.messages drop constraint if exists messages_body_check;
+alter table public.messages add constraint messages_body_check check (char_length(body) between 1 and 500);
 
 -- 오늘저녁: 저녁 메뉴 투표 (메뉴 이름만. 알레르기·학교 정보는 올리지 않음)
 create table if not exists public.meal_polls (
@@ -91,14 +103,18 @@ create table if not exists public.meal_votes (
 
 -- ---------- 도움 함수 ----------
 -- 지금 로그인한 사람의 구성원 정보 (RLS 안에서 쓰므로 security definer)
+-- members.user_id 또는 member_logins(추가 연결) 어느 쪽이든 같은 구성원으로 봄
 create or replace function public.my_member()
 returns public.members language sql stable security definer set search_path = public as $$
-  select * from public.members where user_id = auth.uid() limit 1;
+  select m.* from public.members m
+  where m.user_id = auth.uid()
+     or m.id = (select l.member_id from public.member_logins l where l.user_id = auth.uid())
+  limit 1;
 $$;
 
 create or replace function public.my_family_id()
 returns uuid language sql stable security definer set search_path = public as $$
-  select family_id from public.members where user_id = auth.uid() limit 1;
+  select (public.my_member()).family_id;
 $$;
 
 create or replace function public.i_am_parent()
@@ -194,9 +210,27 @@ begin
   return lc.member_id;
 end $$;
 
+-- 5-1) 아이 기기의 다른 앱(가족방 등): 연결 코드 입력 — 이미 연결된 앱은 끊지 않고 하나 더 연결
+create or replace function public.link_extra_app(c text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare lc link_codes;
+begin
+  if auth.uid() is null then raise exception '로그인이 필요해요'; end if;
+  select * into lc from link_codes where code = c and used_at is null and expires_at > now();
+  if lc.code is null then raise exception '코드가 맞지 않거나 시간이 지났어요'; end if;
+  if exists (select 1 from members where user_id = auth.uid()) then
+    raise exception '이미 가족에 연결된 로그인이에요';
+  end if;
+  insert into member_logins(user_id, member_id) values (auth.uid(), lc.member_id)
+  on conflict (user_id) do update set member_id = excluded.member_id, created_at = now();
+  update link_codes set used_at = now() where code = c;
+  return lc.member_id;
+end $$;
+
 -- 6) 아무나: 이 기기의 가족 연결 끊기
 create or replace function public.leave_family()
 returns void language sql security definer set search_path = public as $$
+  delete from public.member_logins where user_id = auth.uid();
   update public.members set user_id = null where user_id = auth.uid() and role = 'child';
   delete from public.members where user_id = auth.uid() and role = 'parent';
 $$;
@@ -204,17 +238,18 @@ $$;
 -- 함수 실행 권한: 로그인한 사람만
 revoke all on function public.my_member(), public.my_family_id(), public.i_am_parent(), public._new_code(int),
   public.create_family(text, text), public.join_family_as_parent(text, text), public.add_child(text, int),
-  public.create_link_code(uuid), public.redeem_link_code(text), public.leave_family()
+  public.create_link_code(uuid), public.redeem_link_code(text), public.link_extra_app(text), public.leave_family()
   from public, anon;
 grant execute on function public.my_member(), public.my_family_id(), public.i_am_parent(),
   public.create_family(text, text), public.join_family_as_parent(text, text), public.add_child(text, int),
-  public.create_link_code(uuid), public.redeem_link_code(text), public.leave_family()
+  public.create_link_code(uuid), public.redeem_link_code(text), public.link_extra_app(text), public.leave_family()
   to authenticated;
 
 -- ---------- 보안 규칙 (RLS) ----------
 alter table public.families    enable row level security;
 alter table public.members     enable row level security;
 alter table public.link_codes  enable row level security;   -- 규칙 없음 = 직접 접근 불가 (함수로만)
+alter table public.member_logins enable row level security; -- 규칙 없음 = 직접 접근 불가 (함수로만)
 alter table public.study_daily enable row level security;
 alter table public.messages    enable row level security;
 alter table public.meal_polls  enable row level security;
@@ -222,10 +257,14 @@ alter table public.meal_votes  enable row level security;
 
 revoke all on public.families, public.members, public.link_codes, public.study_daily, public.messages, public.meal_polls, public.meal_votes from anon;
 revoke all on public.link_codes from authenticated;
+revoke all on public.member_logins from anon, authenticated;
 grant select on public.families to authenticated;
 grant select, update, delete on public.members to authenticated;
 grant select, insert, update, delete on public.study_daily to authenticated;
-grant select, insert, update on public.messages to authenticated;
+grant select, insert on public.messages to authenticated;
+-- 메시지 수정은 "읽음 표시(read_at)" 칸만. 남의 메시지 내용을 바꿀 수 없게.
+revoke update on public.messages from authenticated;
+grant update (read_at) on public.messages to authenticated;
 grant select, insert, update on public.meal_polls to authenticated;
 grant select, insert, update, delete on public.meal_votes to authenticated;
 
@@ -295,5 +334,16 @@ create policy vote_change on public.meal_votes for update to authenticated
 drop policy if exists vote_cancel on public.meal_votes;
 create policy vote_cancel on public.meal_votes for delete to authenticated
   using (member_id = (my_member()).id);
+
+-- ---------- 실시간(Realtime): 가족방 새 메시지 바로 받기 ----------
+-- 위 RLS 규칙이 그대로 적용되어 자기 가족 메시지만 전달됩니다.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables
+                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages') then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+end $$;
 
 -- 끝. 실행 후 "Success. No rows returned"가 나오면 성공입니다.

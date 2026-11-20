@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <title>가족 홈</title>
+  <meta name="theme-color" content="#f6f3ee">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="가족 홈">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- 불러오는 중 -->
+  <section id="screen-loading" class="screen center">
+    <p class="muted">가족 홈을 여는 중…</p>
+  </section>
+
+  <!-- 로그인: 누구인지 고르기 -->
+  <section id="screen-login" class="screen center" hidden>
+    <div class="card">
+      <h1>🏠 가족 홈</h1>
+      <p class="muted">우리 가족만 들어오는 곳이에요.<br>오늘저녁 앱에서 쓰던 가족 계정으로 들어와요.</p>
+      <button class="btn primary" data-go="parent">부모 (이메일로 로그인)</button>
+      <button class="btn" data-go="child">아이 (연결 코드 입력)</button>
+    </div>
+  </section>
+
+  <!-- 부모: 이메일 → 코드 -->
+  <section id="screen-parent" class="screen center" hidden>
+    <form class="card" id="form-email">
+      <h2>부모 로그인</h2>
+      <label>이메일
+        <input type="email" id="email" autocomplete="email" required placeholder="오늘저녁에서 쓰던 이메일">
+      </label>
+      <button class="btn primary" type="submit">로그인 코드 받기</button>
+      <p class="error" id="email-error" role="alert"></p>
+      <button class="btn link" type="button" data-go="login">← 처음으로</button>
+    </form>
+    <form class="card" id="form-otp" hidden>
+      <h2>메일로 온 코드</h2>
+      <p class="muted" id="otp-help"></p>
+      <label>코드
+        <input type="text" id="otp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" required placeholder="숫자 코드">
+      </label>
+      <button class="btn primary" type="submit">들어가기</button>
+      <p class="error" id="otp-error" role="alert"></p>
+      <button class="btn link" type="button" id="otp-back">← 이메일 다시 입력</button>
+    </form>
+  </section>
+
+  <!-- 아이: 연결 코드 -->
+  <section id="screen-child" class="screen center" hidden>
+    <form class="card" id="form-link">
+      <h2>아이 폰 연결</h2>
+      <p class="muted">부모님 폰의 <b>오늘저녁 → 우리 가족</b>에서 연결 코드 6자리를 만들어 달라고 하세요.<br>오늘저녁 연결은 그대로 유지돼요.</p>
+      <label>연결 코드
+        <input type="text" id="link-code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" required placeholder="6자리 숫자">
+      </label>
+      <button class="btn primary" type="submit">연결하기</button>
+      <p class="error" id="link-error" role="alert"></p>
+      <button class="btn link" type="button" data-go="login">← 처음으로</button>
+    </form>
+  </section>
+
+  <!-- 로그인은 됐는데 가족이 없음 -->
+  <section id="screen-nofamily" class="screen center" hidden>
+    <div class="card">
+      <h2>아직 가족이 없어요</h2>
+      <p class="muted">오늘저녁 앱의 <b>우리 가족</b> 화면에서 먼저 가족을 만들어 주세요. 그다음 여기로 다시 오면 돼요.</p>
+      <button class="btn" id="nofamily-logout">로그아웃</button>
+    </div>
+  </section>
+
+  <!-- 가족 홈: 메뉴 고르기 -->
+  <section id="screen-home" class="screen home" hidden>
+    <header class="chat-head">
+      <h1 id="family-name">가족 홈</h1>
+      <button class="icon-btn" id="menu-btn" aria-label="메뉴" aria-haspopup="true" aria-expanded="false">⋯</button>
+      <div class="menu" id="menu" hidden>
+        <p class="menu-me" id="menu-me"></p>
+        <button id="show-all-btn">모든 메뉴 보기</button>
+        <button id="logout-btn">로그아웃</button>
+      </div>
+    </header>
+    <main class="home-body">
+      <p class="hello" id="hello"></p>
+      <nav class="tiles" aria-label="가족 메뉴">
+        <a class="tile" data-app="dinner" href="#">
+          <span class="tile-icon" aria-hidden="true">🍚</span>
+          <span class="tile-name">오늘저녁</span>
+          <span class="tile-desc">메뉴 추천 · 저녁 투표</span>
+        </a>
+        <a class="tile" data-app="harunote" href="#">
+          <span class="tile-icon" aria-hidden="true">✏️</span>
+          <span class="tile-name">초등학습</span>
+          <span class="tile-desc">하루노트 · 오늘의 10문제</span>
+        </a>
+        <a class="tile" data-app="nuneul" href="#">
+          <span class="tile-icon" aria-hidden="true">📘</span>
+          <span class="tile-name">중등학습</span>
+          <span class="tile-desc">눈을뜨자 · 중학 공부</span>
+        </a>
+        <a class="tile" data-app="chat" href="#chat">
+          <span class="tile-icon" aria-hidden="true">💬</span>
+          <span class="tile-name">가족채팅</span>
+          <span class="tile-desc" id="chat-preview">우리 가족 대화방</span>
+          <span class="badge" id="chat-badge" hidden></span>
+        </a>
+      </nav>
+    </main>
+  </section>
+
+  <!-- 가족채팅 -->
+  <section id="screen-chat" class="screen chat" hidden>
+    <header class="chat-head">
+      <button class="icon-btn" id="back-btn" aria-label="가족 홈으로">‹</button>
+      <h1>가족채팅</h1>
+    </header>
+    <div class="conn" id="conn" hidden>연결이 잠시 끊겼어요. 다시 잇는 중…</div>
+    <main class="messages" id="messages" aria-live="polite">
+      <div class="older" id="older"></div>
+      <ol id="msg-list"></ol>
+    </main>
+    <form class="composer" id="composer">
+      <textarea id="msg-input" rows="1" maxlength="500" placeholder="메시지 보내기" aria-label="메시지"></textarea>
+      <button class="send" type="submit" id="send-btn" aria-label="보내기" disabled>보내기</button>
+    </form>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
