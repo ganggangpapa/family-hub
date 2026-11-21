@@ -210,3 +210,61 @@ input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: 
   cursor: pointer; flex-shrink: 0;
 }
 .send:disabled { opacity: .5; cursor: default; }
+
+/* ---------- 앱 카드 (2단계) ---------- */
+.card-msg {
+  align-self: stretch; margin: 10px 4px 2px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 18px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 8px;
+}
+.card-msg.notice { align-self: center; max-width: 92%; background: var(--mine); border-color: transparent; text-align: center; padding: 10px 16px; }
+.card-msg.notice .card-head { justify-content: center; gap: 8px; }
+.card-head { display: flex; justify-content: space-between; align-items: center; }
+.card-app { font-size: 12px; font-weight: 700; color: var(--muted); }
+.card-title { margin: 0; font-size: 16px; font-weight: 700; overflow-wrap: anywhere; }
+.card-sub { margin: 0; font-size: 13px; color: var(--muted); }
+.card-foot { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.small-btn { min-height: 38px; padding: 0 14px; font-size: 14px; }
+.vote-list { display: flex; flex-direction: column; gap: 8px; }
+.vote-opt {
+  position: relative; overflow: hidden;
+  display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 8px;
+  min-height: 48px; padding: 8px 12px; text-align: left;
+  font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 12px; cursor: pointer;
+}
+.vote-opt:disabled { cursor: default; color: var(--text); }
+.vote-opt.chosen { border-color: var(--accent); }
+.vote-opt.win { border-color: var(--accent); font-weight: 700; }
+.vote-bar { position: absolute; inset: 0 auto 0 0; background: var(--accent); opacity: .16; transition: width .25s; }
+.vote-name, .vote-count, .vote-who { position: relative; }
+.vote-name { font-weight: 600; overflow-wrap: anywhere; }
+.vote-count { font-size: 14px; color: var(--muted); }
+.vote-who { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+
+.poll-form {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line); background: var(--bg);
+}
+.poll-options { display: flex; flex-direction: column; gap: 8px; }
+.poll-form .btn-row { display: flex; gap: 8px; }
+.poll-form .btn-row .btn { flex: 1; }
+.poll-form .btn.link { align-self: flex-start; min-height: 36px; padding: 0; }
+.poll-open {
+  width: 44px; height: 44px; flex-shrink: 0; border-radius: 50%;
+  border: 1px solid var(--line); background: var(--surface); font-size: 20px; cursor: pointer;
+}
+
+/* ---------- 이번 주 학습 (부모) ---------- */
+.weekly { margin-top: 20px; }
+.weekly h2 { font-size: 17px; margin: 0 2px 10px; }
+.weekly h2 .small { font-weight: 400; margin-left: 4px; }
+.weekly-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.weekly-item {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px;
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 2px;
+}
+.weekly-name { font-weight: 700; }
+.weekly-stat { font-size: 14px; }
+.weekly-practice { font-size: 13px; color: var(--muted); }

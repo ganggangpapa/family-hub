@@ -153,6 +153,10 @@
           <span class="badge" id="chat-badge" hidden></span>
         </a>
       </nav>
+      <section class="weekly" id="weekly" hidden aria-labelledby="weekly-title">
+        <h2 id="weekly-title">📊 이번 주 학습 <span class="muted small">부모에게만 보여요</span></h2>
+        <ul class="weekly-list" id="weekly-list"></ul>
+      </section>
     </main>
   </section>
 
@@ -180,7 +184,18 @@
       <div class="older" id="older"></div>
       <ol id="msg-list"></ol>
     </main>
+    <form class="poll-form" id="poll-form" hidden>
+      <p class="card-title">🍚 저녁 투표 만들기</p>
+      <div class="poll-options" id="poll-options"></div>
+      <button class="btn link" type="button" id="poll-add">＋ 메뉴 더 넣기</button>
+      <p class="error" id="poll-error" role="alert"></p>
+      <div class="btn-row">
+        <button class="btn" type="button" id="poll-cancel">취소</button>
+        <button class="btn primary" type="submit">투표 올리기</button>
+      </div>
+    </form>
     <form class="composer" id="composer">
+      <button class="poll-open" type="button" id="poll-open" aria-label="저녁 투표 만들기" title="저녁 투표 만들기" hidden>🍚</button>
       <textarea id="msg-input" rows="1" maxlength="500" placeholder="메시지 보내기" aria-label="메시지"></textarea>
       <button class="send" type="submit" id="send-btn" aria-label="보내기" disabled>보내기</button>
     </form>

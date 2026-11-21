@@ -1,4 +1,4 @@
-// 가족 홈: 메뉴(오늘저녁 · 초등학습 · 중등학습 · 가족채팅) + 가족채팅(실시간, 이전 메시지) + 앱 설치 안내
+// 가족 홈: 메뉴(오늘저녁 · 초등학습 · 중등학습 · 가족채팅) + 가족채팅(실시간, 이전 메시지, 앱 카드) + 앱 설치 안내
 // 서버 규칙(RLS)은 family-hub/supabase/schema.sql 에 있습니다.
 (() => {
   'use strict';
@@ -7,6 +7,8 @@
   const $ = (id) => document.getElementById(id);
   const PAGE = 50;
   const KIND_LABEL = { cheer: '응원', sticker: '칭찬 스티커', show: '보여 주기', meal_request: '먹고 싶어요' };
+  const CARD_KINDS = ['dinner_vote', 'notice', 'study_done'];   // 앱이 저절로 올리는 카드 (서버 트리거가 만듦)
+  const APP_LABEL = { dinner: '🍚 오늘저녁', harunote: '✏️ 하루노트', nuneul: '📘 중학노트' };
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
   function show(name) {
@@ -38,6 +40,7 @@
   let chatDirty = true;       // 채팅 화면이 숨어 있는 동안 바뀐 것이 있음
   let lastSeen = 0;           // 이 기기에서 마지막으로 본 메시지 번호 (안 읽은 개수 계산용)
   let showAll = false;        // 메뉴에서 "모든 메뉴 보기"를 눌렀는지
+  let polls = new Map();      // 저녁 투표 id → { options, closed_at, votes: Map(구성원 → 고른 번호) }
 
   const store = {
     get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
@@ -111,8 +114,10 @@
       setupTiles();
       $('install-tip').hidden = installTipHidden();
 
-      msgs = []; ids = new Set(); noMoreOlder = false; chatDirty = true;
+      msgs = []; ids = new Set(); noMoreOlder = false; chatDirty = true; polls = new Map();
+      $('poll-open').hidden = me.role !== 'parent';
       route();
+      loadWeekly();
       const first = await fetchPage(null);
       // 처음 쓰는 기기는 예전 메시지를 모두 "안 읽음"으로 세지 않음
       if (store.get('fh-seen-' + me.id) === null) {
@@ -132,13 +137,13 @@
   }
 
   async function loadMembers() {
-    const { data, error } = await sb.from('members').select('id,nickname,role');
+    const { data, error } = await sb.from('members').select('id,nickname,role,grade');
     if (error) throw error;
     members = new Map(data.map((r) => [r.id, r]));
   }
 
   // ---------- 메시지 불러오기 ----------
-  const COLS = 'id,from_member,to_member,kind,body,created_at';
+  const COLS = 'id,from_member,to_member,kind,body,created_at,source_app,payload';
 
   async function fetchPage(beforeId) {
     let q = sb.from('messages').select(COLS)
@@ -187,6 +192,13 @@
       .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'messages', filter: 'family_id=eq.' + me.family_id },
         (payload) => addMessages([payload.new], 'new'))
+      // 투표 카드: 누가 투표하거나 마감하면 바로 숫자 바꾸기
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'meal_votes', filter: 'family_id=eq.' + me.family_id },
+        (p) => { const id = (p.new && p.new.poll_id) || (p.old && p.old.poll_id); if (id) loadPolls([id], true); })
+      .on('postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'meal_polls', filter: 'family_id=eq.' + me.family_id },
+        (p) => { if (p.new && p.new.id) loadPolls([p.new.id], true); })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') { $('conn').hidden = true; catchUp(); }
         else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { $('conn').hidden = false; }
@@ -206,6 +218,8 @@
     if (fresh.some((r) => !members.has(r.from_member) || (r.to_member && !members.has(r.to_member)))) {
       try { await loadMembers(); } catch (e) { /* 이름 대신 '가족'으로 표시 */ }
     }
+    const pollIds = fresh.filter((r) => r.kind === 'dinner_vote' && r.payload && r.payload.poll_id).map((r) => r.payload.poll_id);
+    if (pollIds.length) await loadPolls(pollIds, false);
 
     if (mode === 'older') {
       msgs = fresh.concat(msgs);
@@ -274,6 +288,8 @@
         || minuteKey(new Date(next.created_at)) !== minuteKey(d) || m.pending || m.failed;
       const mine = m.from_member === me.id;
 
+      if (CARD_KINDS.includes(m.kind)) { frag.appendChild(renderCard(m, d)); return; }
+
       const li = document.createElement('li');
       li.className = 'msg' + (mine ? ' mine' : '') + (sameAsPrev ? ' cont' : '')
         + (m.pending ? ' pending' : '') + (m.failed ? ' failed' : '');
@@ -323,6 +339,204 @@
 
     // 화면이 덜 찼으면 이전 것을 더 불러옴
     if (!noMoreOlder && box.scrollHeight <= box.clientHeight + 40) loadOlder();
+  }
+
+  // ---------- 앱 카드 (투표 · 공지 · 학습 완료) ----------
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  const optText = (o) => (typeof o === 'string' ? o : (o && (o.name || o.label || o.title)) || String(o));
+
+  function renderCard(m, d) {
+    const li = el('li', 'card-msg ' + m.kind);
+    const head = el('div', 'card-head');
+    head.appendChild(el('span', 'card-app', APP_LABEL[m.source_app] || '알림'));
+    head.appendChild(el('time', 'time', fmtTime.format(d)));
+    li.appendChild(head);
+
+    if (m.kind === 'dinner_vote') {
+      li.appendChild(el('p', 'card-title', m.body));
+      li.appendChild(el('p', 'card-sub', nameOf(m.from_member) + '님이 올렸어요'));
+      const poll = polls.get(m.payload && m.payload.poll_id);
+      if (!poll) { li.appendChild(el('p', 'card-sub', '투표를 불러오는 중…')); return li; }
+      const counts = poll.options.map(() => []);
+      poll.votes.forEach((choice, who) => { if (counts[choice]) counts[choice].push(nameOf(who)); });
+      const total = poll.votes.size;
+      const top = Math.max(0, ...counts.map((c) => c.length));
+      const myChoice = poll.votes.get(me.id);
+      const closed = !!poll.closed_at;
+      const list = el('div', 'vote-list');
+      poll.options.forEach((o, i) => {
+        const b = el('button', 'vote-opt');
+        b.type = 'button';
+        b.disabled = closed || poll.busy;
+        if (myChoice === i) b.classList.add('chosen');
+        if (closed && top > 0 && counts[i].length === top) b.classList.add('win');
+        b.setAttribute('aria-pressed', String(myChoice === i));
+        const bar = el('span', 'vote-bar');
+        bar.style.width = (total ? Math.round(counts[i].length / total * 100) : 0) + '%';
+        b.appendChild(bar);
+        b.appendChild(el('span', 'vote-name', (myChoice === i ? '✓ ' : '') + optText(o)));
+        b.appendChild(el('span', 'vote-count', counts[i].length + '표'));
+        if (counts[i].length) b.appendChild(el('span', 'vote-who', counts[i].join(', ')));
+        b.addEventListener('click', () => castVote(m.payload.poll_id, i));
+        list.appendChild(b);
+      });
+      li.appendChild(list);
+      const foot = el('div', 'card-foot');
+      foot.appendChild(el('span', 'card-sub', closed ? '마감됐어요 · ' + total + '명 투표' : total + '명 투표 · 다시 누르면 바꿀 수 있어요'));
+      if (!closed && me.role === 'parent') {
+        const c = el('button', 'btn small-btn', '투표 마감');
+        c.type = 'button';
+        c.disabled = !!poll.busy;
+        c.addEventListener('click', () => closePoll(m.payload.poll_id));
+        foot.appendChild(c);
+      }
+      li.appendChild(foot);
+      if (poll.error) li.appendChild(el('p', 'error', poll.error));
+    } else if (m.kind === 'notice') {
+      li.appendChild(el('p', 'card-title', '📢 ' + m.body));
+    } else if (m.kind === 'study_done') {
+      li.appendChild(el('p', 'card-title', m.body));
+      if (m.from_member !== me.id) {
+        const sent = msgs.some((x) => x.kind === 'cheer' && x.from_member === me.id && x.to_member === m.from_member
+          && new Date(x.created_at) >= d);
+        const b = el('button', 'btn small-btn', sent ? '👏 응원했어요' : '👏 응원하기');
+        b.type = 'button';
+        b.disabled = sent;
+        b.addEventListener('click', () => send({ id: 'tmp-' + (++tmpSeq), from_member: me.id, to_member: m.from_member,
+          kind: 'cheer', body: '👏 잘했어! 오늘도 수고했어', created_at: new Date().toISOString(), pending: true }));
+        const foot = el('div', 'card-foot');
+        foot.appendChild(b);
+        li.appendChild(foot);
+      }
+    }
+    return li;
+  }
+
+  function loadPolls(idList, redraw) {
+    return fetchPolls(idList, redraw).catch((e) => console.error(e));   // 실패하면 카드만 예전 숫자로 남음
+  }
+  async function fetchPolls(idList, redraw) {
+    const want = [...new Set(idList)];
+    if (!want.length) return;
+    const [{ data: ps, error: e1 }, { data: vs, error: e2 }] = await Promise.all([
+      sb.from('meal_polls').select('id,options,closed_at').in('id', want),
+      sb.from('meal_votes').select('poll_id,member_id,choice').in('poll_id', want),
+    ]);
+    if (e1 || e2) { console.error(e1 || e2); return; }
+    ps.forEach((p) => {
+      const old = polls.get(p.id);
+      polls.set(p.id, { options: Array.isArray(p.options) ? p.options : [], closed_at: p.closed_at,
+        votes: new Map(vs.filter((v) => v.poll_id === p.id).map((v) => [v.member_id, v.choice])),
+        busy: old ? old.busy : false });
+    });
+    if (redraw) render('stay');
+  }
+
+  async function castVote(pollId, choice) {
+    const poll = polls.get(pollId);
+    if (!poll || poll.closed_at || poll.busy || poll.votes.get(me.id) === choice) return;
+    const before = poll.votes.get(me.id);
+    poll.votes.set(me.id, choice);   // 바로 보이게 먼저 바꿈
+    poll.error = '';
+    render('stay');
+    const { error } = await sb.from('meal_votes')
+      .upsert({ poll_id: pollId, member_id: me.id, family_id: me.family_id, choice }, { onConflict: 'poll_id,member_id' });
+    if (error) {
+      console.error(error);
+      if (before === undefined) poll.votes.delete(me.id); else poll.votes.set(me.id, before);
+      poll.error = '투표하지 못했어요. 이미 마감됐거나 인터넷이 끊겼어요.';
+    }
+    await loadPolls([pollId], true);
+  }
+
+  async function closePoll(pollId) {
+    const poll = polls.get(pollId);
+    if (!poll || !confirm('투표를 마감하고 결과를 알릴까요?')) return;
+    poll.busy = true; poll.error = '';
+    render('stay');
+    const { error } = await sb.from('meal_polls').update({ closed_at: new Date().toISOString() }).eq('id', pollId);
+    poll.busy = false;
+    if (error) { console.error(error); poll.error = '마감하지 못했어요: ' + error.message; }
+    await loadPolls([pollId], true);
+  }
+
+  // ---------- 저녁 투표 만들기 (부모) ----------
+  const localDay = (dt) => dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+
+  function pollInputs() { return [...document.querySelectorAll('#poll-options input')]; }
+  function addPollInput(v) {
+    const n = pollInputs().length;
+    if (n >= 5) return;
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.maxLength = 30; inp.value = v || '';
+    inp.placeholder = '메뉴 ' + (n + 1) + (n < 2 ? '' : ' (안 써도 돼요)');
+    inp.setAttribute('aria-label', '메뉴 ' + (n + 1));
+    $('poll-options').appendChild(inp);
+    $('poll-add').hidden = n + 1 >= 5;
+  }
+  $('poll-open').addEventListener('click', () => {
+    $('poll-options').textContent = '';
+    $('poll-error').textContent = '';
+    for (let i = 0; i < 3; i++) addPollInput();
+    $('poll-form').hidden = false;
+    $('composer').hidden = true;
+    pollInputs()[0].focus();
+  });
+  $('poll-add').addEventListener('click', () => { addPollInput(); pollInputs().slice(-1)[0].focus(); });
+  $('poll-cancel').addEventListener('click', () => { $('poll-form').hidden = true; $('composer').hidden = false; });
+  $('poll-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const opts = [...new Set(pollInputs().map((i) => i.value.trim()).filter(Boolean))];
+    if (opts.length < 2) { $('poll-error').textContent = '메뉴를 2개 이상 써 주세요.'; return; }
+    busy(form, true);
+    const { error } = await sb.from('meal_polls')
+      .insert({ family_id: me.family_id, day: localDay(new Date()), created_by: me.id, options: opts });
+    busy(form, false);
+    if (error) { console.error(error); $('poll-error').textContent = '투표를 만들지 못했어요: ' + error.message; return; }
+    $('poll-form').hidden = true;
+    $('composer').hidden = false;
+    catchUp();   // 서버가 만든 투표 카드를 바로 가져옴
+  });
+
+  // ---------- 이번 주 학습 (부모에게만) ----------
+  function loadWeekly() {
+    drawWeekly().catch((e) => { console.error(e); $('weekly').hidden = true; });   // 실패해도 홈은 그대로
+  }
+  async function drawWeekly() {
+    const box = $('weekly');
+    box.hidden = true;
+    if (!me || me.role !== 'parent') return;
+    const now = new Date();
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    const { data, error } = await sb.from('study_daily')
+      .select('member_id,app,day,solved,correct,practice')
+      .gte('day', localDay(monday));
+    if (error || !data || !data.length) return;
+    const by = new Map();
+    data.forEach((r) => {
+      const k = r.member_id + '|' + r.app;
+      const g = by.get(k) || { member: r.member_id, app: r.app, days: new Set(), solved: 0, correct: 0, practice: new Set() };
+      g.days.add(r.day); g.solved += r.solved || 0; g.correct += r.correct || 0;
+      (Array.isArray(r.practice) ? r.practice : []).forEach((p) => typeof p === 'string' && g.practice.add(p));
+      by.set(k, g);
+    });
+    const list = $('weekly-list');
+    list.textContent = '';
+    [...by.values()].sort((a, b) => nameOf(a.member).localeCompare(nameOf(b.member), 'ko')).forEach((g) => {
+      const li = el('li', 'weekly-item');
+      li.appendChild(el('span', 'weekly-name', nameOf(g.member) + ' · ' + (APP_LABEL[g.app] || g.app)));
+      const pct = g.solved ? Math.round(g.correct / g.solved * 100) : 0;
+      li.appendChild(el('span', 'weekly-stat', g.days.size + '일 공부 · ' + g.solved + '문제 · 정답 ' + pct + '%'));
+      if (g.practice.size) li.appendChild(el('span', 'weekly-practice', '더 연습: ' + [...g.practice].slice(0, 3).join(', ')));
+      list.appendChild(li);
+    });
+    box.hidden = false;
   }
 
   function renderOlderHint() {
@@ -591,7 +805,7 @@
     if (!msgs.includes(local)) msgs.push(local);
     render('bottom');
     const { data, error } = await sb.from('messages')
-      .insert({ family_id: me.family_id, from_member: me.id, kind: 'text', body: local.body })
+      .insert({ family_id: me.family_id, from_member: me.id, to_member: local.to_member || null, kind: local.kind || 'text', body: local.body })
       .select(COLS).single();
     if (error) {
       console.error(error);
