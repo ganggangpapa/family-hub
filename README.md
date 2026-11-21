@@ -10,8 +10,8 @@
 | [docs/family-chat-spec.md](docs/family-chat-spec.md) | 가족방(가족 전용 채팅) 설계와 단계 |
 | [apps/family-chat/](apps/family-chat/) | 가족방 웹앱 (빌드 없음, Vercel 배포). 공개 설정값은 `config.js` |
 
-| 앱 | 저장소 | 연결 순서 |
-| --- | --- | --- |
-| 오늘저녁뭐먹지 | `fridge-to-family-feast` | 1단계 |
-| 하루노트 (초등) | `harunote` | 2단계 |
-| 눈을뜨자 (중등) | `MS-today-note` [확인 필요] | 3단계 |
+| 앱 | 저장소 | 웹 주소 | 연결 순서 |
+| --- | --- | --- | --- |
+| 오늘저녁뭐먹지 | `fridge-to-family-feast` | https://familydinner-feast.vercel.app/ | 1단계 |
+| 하루노트 (초등) | `harunote` | https://harunote-black.vercel.app/ | 2단계 |
+| 중학노트·눈을뜨자 (중등) | `MS-today-note` [확인 필요] | https://middle-school-today-note.vercel.app/ | 3단계 |

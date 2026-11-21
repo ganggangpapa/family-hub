@@ -76,9 +76,20 @@ create table if not exists public.messages (
 create index if not exists messages_family_idx on public.messages(family_id, created_at desc);
 -- 이미 표를 만든 뒤 다시 실행할 때를 위해 종류 목록을 새로 맞춤
 alter table public.messages drop constraint if exists messages_kind_check;
-alter table public.messages add constraint messages_kind_check check (kind in ('cheer', 'sticker', 'show', 'meal_request', 'text'));
+alter table public.messages add constraint messages_kind_check check (kind in (
+  'cheer', 'sticker', 'show', 'meal_request', 'text',          -- 사람이 보내는 것
+  'dinner_vote', 'notice', 'study_done'));                    -- 앱이 저절로 올리는 카드 (2단계, 아래 트리거만 씀)
 alter table public.messages drop constraint if exists messages_body_check;
 alter table public.messages add constraint messages_body_check check (char_length(body) between 1 and 500);
+-- 가족방 2단계 (2026-11-21): 앱 카드용 칸. 어느 앱이 올렸는지 + 카드에 필요한 추가 정보
+alter table public.messages add column if not exists source_app text;
+alter table public.messages add column if not exists payload jsonb not null default '{}'::jsonb;
+alter table public.messages drop constraint if exists messages_source_app_check;
+alter table public.messages add constraint messages_source_app_check check (source_app is null or source_app in ('dinner', 'harunote', 'nuneul'));
+alter table public.messages drop constraint if exists messages_payload_check;
+alter table public.messages add constraint messages_payload_check check (jsonb_typeof(payload) = 'object' and pg_column_size(payload) <= 4000);
+-- 같은 카드가 두 번 올라오지 않게 (payload의 key가 같으면 한 번만)
+create unique index if not exists messages_card_key_idx on public.messages(family_id, kind, (payload->>'key')) where payload ? 'key';
 
 -- 오늘저녁: 저녁 메뉴 투표 (메뉴 이름만. 알레르기·학교 정보는 올리지 않음)
 create table if not exists public.meal_polls (
@@ -302,7 +313,10 @@ create policy msg_read on public.messages for select to authenticated
 drop policy if exists msg_send on public.messages;
 create policy msg_send on public.messages for insert to authenticated
   with check (from_member = (my_member()).id and family_id = my_family_id()
-              and (to_member is null or to_member in (select id from public.members where family_id = my_family_id())));
+              and (to_member is null or to_member in (select id from public.members where family_id = my_family_id()))
+              -- 앱 카드(투표·공지·학습 완료)는 아래 트리거만 만들 수 있음. 사람이 흉내 내지 못하게.
+              and kind in ('cheer', 'sticker', 'show', 'meal_request', 'text')
+              and source_app is null and payload = '{}'::jsonb);
 drop policy if exists msg_mark_read on public.messages;
 create policy msg_mark_read on public.messages for update to authenticated
   using (family_id = my_family_id() and (to_member = (my_member()).id or to_member is null))
@@ -335,14 +349,91 @@ drop policy if exists vote_cancel on public.meal_votes;
 create policy vote_cancel on public.meal_votes for delete to authenticated
   using (member_id = (my_member()).id);
 
--- ---------- 실시간(Realtime): 가족방 새 메시지 바로 받기 ----------
--- 위 RLS 규칙이 그대로 적용되어 자기 가족 메시지만 전달됩니다.
-do $$
+-- ---------- 가족방 카드 (2단계): 앱에서 일이 생기면 가족방에 저절로 한 줄 ----------
+-- 카드 내용은 실제 표(투표·학습 기록)에서 서버가 직접 만들어서, 누가 가짜 카드를 올릴 수 없음.
+create or replace function public._option_text(opts jsonb, i int)
+returns text language sql immutable as $$
+  select case jsonb_typeof(opts->i)
+           when 'string' then opts->>i
+           when 'object' then coalesce(opts->i->>'name', opts->i->>'label', opts->i->>'title', opts->>i)
+           else opts->>i end
+$$;
+
+-- 저녁 투표가 생기면 (오늘저녁 앱에서든 가족 홈에서든) 투표 카드
+create or replace function public._card_poll_opened()
+returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
-     and not exists (select 1 from pg_publication_tables
-                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages') then
-    alter publication supabase_realtime add table public.messages;
+  insert into messages (family_id, from_member, kind, body, source_app, payload)
+  values (new.family_id, new.created_by, 'dinner_vote', '오늘 저녁 뭐 먹을까? 투표해 주세요 🍚', 'dinner',
+          jsonb_build_object('key', 'poll-' || new.id, 'poll_id', new.id))
+  on conflict do nothing;
+  return new;
+end $$;
+drop trigger if exists card_poll_opened on public.meal_polls;
+create trigger card_poll_opened after insert on public.meal_polls
+  for each row execute function public._card_poll_opened();
+
+-- 투표를 마감하면 결과 공지 카드
+create or replace function public._card_poll_closed()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare top int; winners text; closer uuid; msg text;
+begin
+  if old.closed_at is not null or new.closed_at is null then return new; end if;
+  select max(c) into top from (select count(*)::int c from meal_votes where poll_id = new.id group by choice) s;
+  if top is not null then
+    select string_agg(coalesce(_option_text(new.options, choice), '?'), ', ' order by choice) into winners
+      from (select choice from meal_votes where poll_id = new.id group by choice having count(*) = top) w;
+  end if;
+  select id into closer from my_member() where family_id = new.family_id;
+  msg := case when winners is null then '저녁 투표를 마감했어요. 투표한 사람이 없어요.'
+              when strpos(winners, ', ') > 0 then '저녁 투표 결과: 동점이에요! ' || winners
+              else '오늘 저녁은 ' || winners || '! 🍽️' end;
+  insert into messages (family_id, from_member, kind, body, source_app, payload)
+  values (new.family_id, coalesce(closer, new.created_by), 'notice', left(msg, 500), 'dinner',
+          jsonb_build_object('key', 'poll-close-' || new.id, 'poll_id', new.id, 'menu', left(winners, 200), 'votes', top))
+  on conflict do nothing;
+  return new;
+end $$;
+drop trigger if exists card_poll_closed on public.meal_polls;
+create trigger card_poll_closed after update of closed_at on public.meal_polls
+  for each row execute function public._card_poll_closed();
+
+-- 하루노트에서 그날 문제를 10개 이상 풀면 "학습 완료" 카드 (아이 한 명당 하루 한 번)
+create or replace function public._card_study_done()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare s int; c int; subj text; nick text;
+begin
+  if new.app <> 'harunote' or new.day < (now() at time zone 'Asia/Seoul')::date - 1 then return new; end if;
+  select sum(solved)::int, sum(correct)::int, string_agg(subject, '·' order by subject)
+    into s, c, subj from study_daily where member_id = new.member_id and app = 'harunote' and day = new.day;
+  if s < 10 then return new; end if;
+  select nickname into nick from members where id = new.member_id;
+  insert into messages (family_id, from_member, kind, body, source_app, payload)
+  values (new.family_id, new.member_id, 'study_done',
+          left(nick || ' 오늘의 문제 ' || s || '개 완료! 🎉 (' || subj || ', ' || c || '개 맞힘)', 500), 'harunote',
+          jsonb_build_object('key', 'study-' || new.member_id || '-' || new.day, 'day', new.day,
+                             'subject', left(subj, 100), 'solved', s, 'correct', c))
+  on conflict do nothing;
+  return new;
+end $$;
+drop trigger if exists card_study_done on public.study_daily;
+create trigger card_study_done after insert or update of solved, correct on public.study_daily
+  for each row execute function public._card_study_done();
+
+revoke all on function public._card_poll_opened(), public._card_poll_closed(), public._card_study_done() from public, anon, authenticated;
+
+-- ---------- 실시간(Realtime): 가족방 새 메시지·투표 바로 받기 ----------
+-- 위 RLS 규칙이 그대로 적용되어 자기 가족 것만 전달됩니다.
+do $$
+declare t text;
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    foreach t in array array['messages', 'meal_polls', 'meal_votes'] loop
+      if not exists (select 1 from pg_publication_tables
+                     where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
+        execute format('alter publication supabase_realtime add table public.%I', t);
+      end if;
+    end loop;
   end if;
 end $$;
 
